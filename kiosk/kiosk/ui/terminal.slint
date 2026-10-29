@@ -1,0 +1,564 @@
+// Zeiterfassung kiosk terminal UI.
+//
+// A single full-screen window driven by in-properties set from Rust. The Rust
+// side owns all state transitions; the UI renders `state` plus the dynamic
+// fields and emits callbacks when the touchscreen buttons are pressed.
+//
+// States: idle, busy, menu, profile, leave (vacation calendar), ok, undone,
+// error, unpaired (fob not yet assigned to an employee — shows ONLY the
+// chip UID, never a token/key), personalize (terminal personalize mode —
+// admin-fob-gated batch fob personalization).
+// `menu-mode`: "out" | "in" | "break" — which action buttons the menu shows.
+
+// Palette — light, calm theme matching the web portal (teal brand accent).
+global Palette {
+    out property <color> background: #eef1f3;   // soft light gray
+    out property <color> surface: #ffffff;       // cards / panels
+    out property <color> accent: #15616d;        // brand teal
+    out property <color> ok: #1d7a4d;            // green — start / resume / confirm
+    out property <color> error: #c0392b;         // red — cancel / errors
+    out property <color> text: #1d2b33;          // ink
+    out property <color> muted: #6a7a85;          // secondary text
+    out property <color> amber: #b4660c;          // amber — Pause / Urlaub
+    out property <color> slate: #4a5a64;          // slate — Feierabend
+    out property <color> line: #d7dde1;           // hairline borders
+}
+
+// A large, flat touch button for the menu screen.
+component BigButton inherits Rectangle {
+    in property <string> label;
+    in property <color> fill;
+    in property <string> glyph;
+    callback clicked();
+
+    width: 500px;
+    height: 320px;
+    border-radius: 34px;
+    background: touch.pressed ? root.fill.darker(0.18)
+        : touch.has-hover ? root.fill.darker(0.06)
+        : root.fill;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 18px;
+        padding: 20px;
+        Text {
+            text: root.glyph;
+            font-size: 96px;
+            color: white;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.label;
+            font-size: 44px;
+            font-weight: 700;
+            color: white;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// An outlined pill touch button (Profil / Urlaub / Zurück).
+component SecondaryButton inherits Rectangle {
+    in property <string> label;
+    in property <color> tint: Palette.muted;
+    callback clicked();
+
+    width: 400px;
+    height: 96px;
+    border-radius: 48px;
+    background: touch.pressed ? root.tint.with-alpha(0.16)
+        : touch.has-hover ? root.tint.with-alpha(0.07)
+        : Palette.surface;
+    border-width: 2px;
+    border-color: root.tint;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        font-size: 30px;
+        font-weight: 600;
+        color: root.tint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// A round nav button (calendar month ‹ ›).
+component RoundBtn inherits Rectangle {
+    in property <string> glyph;
+    callback clicked();
+
+    width: 88px;
+    height: 88px;
+    border-radius: 44px;
+    background: touch.pressed ? Palette.accent.darker(0.18)
+        : touch.has-hover ? Palette.accent.darker(0.06)
+        : Palette.accent;
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.glyph;
+        font-size: 46px;
+        font-weight: 700;
+        color: white;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// A filled touch button (e.g. "Urlaub beantragen").
+component WideButton inherits Rectangle {
+    in property <string> label;
+    in property <color> fill;
+    callback clicked();
+
+    width: 460px;
+    height: 96px;
+    border-radius: 18px;
+    background: touch.pressed ? root.fill.darker(0.18)
+        : touch.has-hover ? root.fill.darker(0.06)
+        : root.fill;
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.label;
+        font-size: 30px;
+        font-weight: 700;
+        color: white;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// One label/value line inside the profile card.
+component ProfileRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> strong: false;
+    height: 42px;
+    spacing: 16px;
+
+    Text {
+        text: root.label;
+        font-size: 21px;
+        color: Palette.muted;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.value;
+        font-size: 23px;
+        font-weight: root.strong ? 800 : 600;
+        color: root.strong ? Palette.accent : Palette.text;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        horizontal-stretch: 0;
+    }
+}
+
+// A single calendar day cell (built from a DayCell struct from Rust).
+struct DayCell {
+    label: string,
+    day-index: int,   // day of month (1..31); 0 = blank
+    col: int,         // 0..6
+    row: int,         // 0..5
+    in-range: bool,
+    is-edge: bool,    // selected start or end
+    selectable: bool,
+}
+
+component DayCellView inherits Rectangle {
+    in property <DayCell> cell;
+    callback clicked();
+
+    border-radius: cell.is-edge ? 14px : 0px;
+    background: cell.is-edge ? Palette.accent
+        : cell.in-range ? Palette.accent.with-alpha(0.16)
+        : (touch.has-hover && cell.selectable) ? Palette.line
+        : transparent;
+
+    touch := TouchArea {
+        enabled: cell.selectable;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: cell.label;
+        font-size: 26px;
+        font-weight: cell.is-edge ? 800 : 500;
+        color: cell.is-edge ? white
+            : cell.selectable ? Palette.text
+            : Palette.muted.with-alpha(0.45);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component MainWindow inherits Window {
+    // ---- Public API: set from Rust ----
+    in property <string> state: "idle";
+    in property <string> heading: "Zeiterfassung";
+    in property <string> message: "Bitte Ausweis an das Lesegerät halten";
+    in property <string> detail: "";
+    in property <string> menu-mode: "out";
+    // Small idle-screen hint, e.g. "2 Stempel warten auf Nachreichung".
+    in property <string> queue-info: "";
+    // Rundmeldungen fuer alle (#189), auf dem Ruhebildschirm; mehrere
+    // durch Zeilenumbruch getrennt. Leer = nichts anzeigen.
+    in property <string> broadcast: "";
+    // Persoenliche Meldung nach dem Stempeln — gleiche Optik wie die
+    // Rundmeldung, eigener Block (frueher an "detail" angehaengt).
+    in property <string> personal-message: "";
+    // Unpaired-fob screen (state == "unpaired"): the chip UID, ALREADY
+    // formatted uppercase/byte-grouped (e.g. "04 5F 43 AA 6A 1A 90") — same
+    // notation as NXP TagInfo on a phone. Never a token/badge id or key.
+    in property <string> chip-uid: "";
+
+    // Profile screen values.
+    in property <string> prof-status: "";
+    in property <string> prof-in: "";
+    in property <string> prof-out: "";
+    // Urlaubsantrag am Terminal vorerst deaktiviert (Genehmigungs-Prozess offen).
+    in property <bool> leave-enabled: false;
+    in property <string> prof-today: "";
+    in property <string> prof-break: "";
+    in property <string> prof-overtime: "";
+    in property <string> prof-konto: "";
+    in property <string> prof-vacation: "";
+    in property <string> prof-contract: "";
+
+    // Vacation calendar values.
+    in property <string> leave-days: "";
+    in property <string> cal-month: "";
+    in property <[DayCell]> cal-days: [];
+
+    // ---- Callbacks: handled in Rust ----
+    callback action-start();
+    callback action-pause();
+    callback action-feierabend();
+    callback action-resume();
+    callback show-profile();
+    callback show-leave();
+    callback cancel();              // red ✕ — back to idle from any screen
+    callback profile-back();        // profile → back to the menu
+    // Vacation calendar.
+    callback cal-prev();
+    callback cal-next();
+    callback cal-day(int);          // tap a day (day-of-month)
+    callback leave-submit();
+    // Terminal personalize mode (admin-fob-gated batch fob personalization).
+    callback personalize-exit();    // "Beenden" button
+
+    title: "Zeiterfassung Terminal";
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    background: Palette.background;
+
+    // Slim brand bar along the top edge.
+    Rectangle {
+        x: 0; y: 0;
+        width: parent.width;
+        height: 8px;
+        background: Palette.accent;
+    }
+
+    VerticalLayout {
+        width: root.width;
+        height: root.height;
+        alignment: center;
+        spacing: 22px;
+        padding: 28px;
+
+        Text {
+            text: root.heading;
+            font-size: 50px;
+            font-weight: 800;
+            color: Palette.text;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if (root.message != "" && root.state != "profile" && root.state != "leave") : Text {
+            text: root.message;
+            font-size: 30px;
+            color: root.state == "error" ? Palette.error : Palette.muted;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if (root.detail != "" && root.state != "profile" && root.state != "leave") : Text {
+            text: root.detail;
+            font-size: 24px;
+            color: Palette.muted;
+            horizontal-alignment: center;
+        }
+
+        // Persoenliche Meldung: gleiche Optik wie die Rundmeldung, mit
+        // Abstand nach oben abgesetzt (User-Wunsch 12.08.).
+        if (root.personal-message != "" && root.state != "profile" && root.state != "leave") : Text {
+            text: root.personal-message;
+            font-size: 32px;
+            font-weight: 600;
+            color: Palette.accent;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            height: self.preferred-height + 40px;
+            vertical-alignment: bottom;
+        }
+
+        // ---- Menu: action buttons (one row per mode) ----
+        if (root.state == "menu" && root.menu-mode == "out") : HorizontalLayout {
+            alignment: center;
+            BigButton {
+                label: "Arbeitszeit starten";
+                glyph: "▶";
+                fill: Palette.ok;
+                clicked => { root.action-start(); }
+            }
+        }
+        if (root.state == "menu" && root.menu-mode == "in") : HorizontalLayout {
+            alignment: center;
+            spacing: 48px;
+            BigButton {
+                label: "Pause";
+                glyph: "☕";
+                fill: Palette.amber;
+                clicked => { root.action-pause(); }
+            }
+            BigButton {
+                label: "Arbeitszeit beenden";
+                glyph: "🏠";
+                fill: Palette.slate;
+                clicked => { root.action-feierabend(); }
+            }
+        }
+        if (root.state == "menu" && root.menu-mode == "break") : HorizontalLayout {
+            alignment: center;
+            BigButton {
+                label: "Pause beenden";
+                glyph: "▶";
+                fill: Palette.ok;
+                clicked => { root.action-resume(); }
+            }
+        }
+
+        // Menu secondary row: Profil + Urlaub.
+        if (root.state == "menu") : HorizontalLayout {
+            alignment: center;
+            spacing: 28px;
+            SecondaryButton {
+                label: "Profil anschauen";
+                tint: Palette.accent;
+                clicked => { root.show-profile(); }
+            }
+            if (root.leave-enabled) : SecondaryButton {
+                label: "Urlaub beantragen";
+                tint: Palette.amber;
+                clicked => { root.show-leave(); }
+            }
+        }
+
+        // ---- Profile card ----
+        if (root.state == "profile") : HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 720px;
+                border-radius: 24px;
+                background: Palette.surface;
+                border-width: 1px;
+                border-color: Palette.line;
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 4px;
+                    ProfileRow { label: "Status"; value: root.prof-status; }
+                    ProfileRow { label: "Eingestempelt"; value: root.prof-in; }
+                    ProfileRow { label: "Ausgestempelt"; value: root.prof-out; }
+                    ProfileRow { label: "Heute gearbeitet"; value: root.prof-today; }
+                    ProfileRow { label: "Pause heute"; value: root.prof-break; }
+                    ProfileRow { label: "Überstunden heute"; value: root.prof-overtime; }
+                    ProfileRow { label: "Überstundenkonto"; value: root.prof-konto; strong: true; }
+                    ProfileRow { label: "Resturlaub"; value: root.prof-vacation; }
+                }
+            }
+        }
+        if (root.state == "profile") : HorizontalLayout {
+            alignment: center;
+            SecondaryButton {
+                label: "Zurück";
+                tint: Palette.accent;
+                clicked => { root.profile-back(); }
+            }
+        }
+
+        // ---- Vacation request: month range calendar (hotel-booking style) ----
+        if (root.state == "leave") : VerticalLayout {
+            spacing: 8px;
+            // Month header with prev/next.
+            HorizontalLayout {
+                alignment: center;
+                spacing: 28px;
+                RoundBtn { glyph: "‹"; clicked => { root.cal-prev(); } }
+                Text {
+                    text: root.cal-month;
+                    width: 320px;
+                    font-size: 30px;
+                    font-weight: 700;
+                    color: Palette.text;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                RoundBtn { glyph: "›"; clicked => { root.cal-next(); } }
+            }
+            // Weekday header + day grid.
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    spacing: 2px;
+                    HorizontalLayout {
+                        Text { text: "Mo"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                        Text { text: "Di"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                        Text { text: "Mi"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                        Text { text: "Do"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                        Text { text: "Fr"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                        Text { text: "Sa"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                        Text { text: "So"; width: 82px; font-size: 22px; color: Palette.muted; horizontal-alignment: center; }
+                    }
+                    Rectangle {
+                        width: 574px;
+                        height: 360px;
+                        for c in root.cal-days : DayCellView {
+                            x: c.col * 82px;
+                            y: c.row * 60px;
+                            width: 82px;
+                            height: 60px;
+                            cell: c;
+                            clicked => { root.cal-day(c.day-index); }
+                        }
+                    }
+                }
+            }
+            Text {
+                text: root.leave-days;
+                font-size: 23px;
+                font-weight: 600;
+                color: Palette.accent;
+                horizontal-alignment: center;
+            }
+            HorizontalLayout {
+                alignment: center;
+                WideButton {
+                    label: "Urlaub beantragen";
+                    fill: Palette.ok;
+                    clicked => { root.leave-submit(); }
+                }
+            }
+        }
+
+        // ---- Unpaired fob (HTTP 404 preview): the tap authenticated but
+        // isn't assigned to an employee yet. Shows ONLY the chip UID —
+        // uppercase hex, TagInfo-style byte groups — so an operator can
+        // read it off the terminal and assign it in the web app. NEVER a
+        // token/badge id or key material (bead 2hv). heading/message/detail
+        // (title, "Noch nicht registriert", hint) render via the shared
+        // Text elements above; only the UID card is specific to this
+        // screen.
+        if (root.state == "unpaired") : HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 760px;
+                height: 150px;
+                border-radius: 24px;
+                background: Palette.surface;
+                border-width: 2px;
+                border-color: Palette.amber;
+                Text {
+                    text: root.chip-uid;
+                    font-family: "monospace";
+                    font-size: 52px;
+                    font-weight: 800;
+                    letter-spacing: 3px;
+                    color: Palette.text;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        // ---- Terminal personalize mode: batch fob personalization. ----
+        // heading/message/detail (running count + per-fob hint) render via
+        // the shared Text elements above; only the "Beenden" exit button is
+        // specific to this screen.
+        if (root.state == "personalize") : HorizontalLayout {
+            alignment: center;
+            SecondaryButton {
+                label: "Beenden";
+                tint: Palette.error;
+                clicked => { root.personalize-exit(); }
+            }
+        }
+    }
+
+    // Rundmeldung(en) fuer alle — prominent im oberen Bereich des Ruhebildschirms.
+    if (root.state == "idle" && root.broadcast != "") : Text {
+        x: 40px;
+        y: 96px;
+        width: parent.width - 80px;
+        text: root.broadcast;
+        font-size: 32px;
+        font-weight: 600;
+        color: Palette.accent;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+    }
+
+    // Offline-queue hint, bottom edge of the idle screen.
+    if (root.state == "idle" && root.queue-info != "") : Text {
+        x: 0;
+        y: parent.height - 56px;
+        width: parent.width;
+        text: root.queue-info;
+        font-size: 20px;
+        color: Palette.muted;
+        horizontal-alignment: center;
+    }
+
+    // Red ✕ (cancel) — top-right corner, on every interactive screen.
+    // Also shown on "personalize" as a proven-working exit path alongside the
+    // dedicated "Beenden" button (which failed to react on real hardware in a
+    // wall-terminal test — see on_cancel's personalize handling below).
+    if (root.state == "menu" || root.state == "profile" || root.state == "leave" || root.state == "personalize") : Rectangle {
+        x: parent.width - 96px;
+        y: 28px;
+        width: 64px;
+        height: 64px;
+        border-radius: 32px;
+        background: xtouch.pressed ? Palette.error.darker(0.15)
+            : xtouch.has-hover ? Palette.error.with-alpha(0.14)
+            : Palette.error.with-alpha(0.06);
+        border-width: 2px;
+        border-color: Palette.error;
+        xtouch := TouchArea {
+            clicked => { root.cancel(); }
+        }
+        Text {
+            text: "✕";
+            font-size: 34px;
+            font-weight: 700;
+            color: xtouch.pressed ? white : Palette.error;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

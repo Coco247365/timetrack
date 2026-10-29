@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# One run per ref: cancel superseded runs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # dev deps (ruff/mypy/pytest) live under [project.optional-dependencies]
+      # dev, an extra -- plain `uv sync` does NOT install extras.
+      - name: Sync deps
+        run: uv sync --extra dev
+      - name: Ruff check
+        run: uv run ruff check .
+      # Non-blocking: formatting drift is reported only; lint + tests are hard gates.
+      - name: Ruff format check
+        run: uv run ruff format --check .
+        continue-on-error: true
+      # Non-blocking: strict-mode type errors are still being worked down.
+      - name: Mypy
+        run: uv run mypy .
+        continue-on-error: true
+      - name: Pytest
+        run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+      # No --ignore-scripts: `postinstall` (nuxt prepare) must run so eslint's
+      # typescript-eslint parser + vitest's Nuxt environment have .nuxt/*
+      # available. Unrelated native build scripts (esbuild, @parcel/watcher)
+      # are pnpm-ignored by default but that's informational only — it does
+      # not fail the install.
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Test
+        run: pnpm test

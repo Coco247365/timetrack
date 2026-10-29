@@ -1,0 +1,12 @@
+node_modules
+.nuxt
+.output
+.data
+dist
+.env
+*.log
+.DS_Store
+
+# Auto-written by @nuxt/test-utils' vitest-environment-nuxt (test setup
+# marker), not project config.
+.nuxtrc

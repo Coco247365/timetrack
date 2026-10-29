@@ -1,0 +1,27 @@
+# TLS termination + routing for the TimeTrack stack.
+# SITE_ADDRESS is injected by docker-compose. A real domain gets an automatic
+# Let's Encrypt certificate; `localhost` falls back to Caddy's internal CA.
+{
+	# Bare-IP deployments: clients send no SNI, so tell Caddy which cert to use.
+	default_sni {$SITE_ADDRESS}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	# FastAPI backend: API + health probe.
+	@api path /api/* /health
+	handle @api {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else: the Nuxt SPA.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

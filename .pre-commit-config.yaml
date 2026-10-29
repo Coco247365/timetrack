@@ -1,0 +1,26 @@
+# Pre-commit-Hooks: formatieren/prüfen Backend-Python VOR jedem Commit, damit
+# master ruff-format-konform bleibt. Die CI ZEIGT Format-Drift nur an
+# (`ruff format --check` läuft dort mit continue-on-error, non-blocking) —
+# dieser Hook ist das, was die Drift tatsächlich draußen hält.
+#
+# Einmalig aktivieren (pro Klon):
+#   pip install pre-commit   # oder: pipx install pre-commit
+#   pre-commit install
+#
+# Danach läuft es automatisch bei jedem `git commit`. Manuell über alles:
+#   pre-commit run --all-files
+#
+# Ruff ist auf dieselbe Version wie backend/uv.lock gepinnt (0.15.19), damit
+# lokal und CI identisch formatieren.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.19
+    hooks:
+      # Erst lint-autofix (Importe sortieren etc.), dann formatieren.
+      - id: ruff
+        name: ruff check (backend, --fix)
+        args: [--fix]
+        files: ^backend/.*\.py$
+      - id: ruff-format
+        name: ruff format (backend)
+        files: ^backend/.*\.py$

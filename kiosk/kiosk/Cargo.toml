@@ -1,0 +1,84 @@
+[package]
+name = "zeiterfassung-kiosk"
+version = "0.1.0"
+edition = "2021"
+description = "Fullscreen NFC time-tracking kiosk terminal for the Zeiterfassung backend"
+license = "MIT"
+publish = false
+
+[features]
+default = ["mock"]
+# The mock reader needs no system libraries and is the default so `cargo build`
+# works on any dev box without hardware.
+mock = []
+# The real PC/SC reader (ACR1252U-M1) — only built on the Pi / a host with
+# libpcsclite available.
+real-reader = ["dep:pcsc"]
+# Compiles in the `SAM_OFF`/`SAM_APDU_DEBUG` diagnostic traces (SAM
+# ceremony + transport bench tooling) that print raw APDUs and key material
+# (session keys, plaintext ChangeKeyEntry commands) to stderr. OFF by
+# default and MUST NOT be enabled in a release/production build — a stray
+# env var on a build with this feature on can dump key material to
+# journald/stdout. See `src/reader/sam/{transport,ceremony}.rs`. Production
+# systemd units should additionally set `StandardError` to a non-persistent
+# sink (see kiosk/README or the unit file) as defense in depth.
+sam-debug = []
+
+[dependencies]
+# Software renderer + winit backend. We disable Slint's default features (which
+# select the femtovg/skia GPU renderers and pull in system `fontconfig`) so the
+# kiosk builds on any host with no native deps beyond Slint's own. The software
+# renderer embeds its own font. The Pi (Wayland/labwc) runs this fine.
+# Pinned to 1.9.x: Slint 1.13+ moved font handling to fontique/parley, whose
+# vendored fontconfig-sys requires the system fontconfig *dev* headers (or a
+# broken dlopen path) even for the software renderer. 1.9 loads fonts without
+# that, so the kiosk builds on any host with no native deps beyond Slint's.
+slint = { version = ">=1.8, <1.10", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-winit",
+    "renderer-software",
+] }
+# Direct access to the winit backend so the kiosk can force-hide the mouse
+# cursor (wall-terminal has no pointer device, but labwc/Wayland still shows
+# one) — see `WinitWindowAccessor::with_winit_window` in `main.rs`. Only used
+# for its `WinitWindowAccessor` extension trait on the window `slint` itself
+# already created via its own "backend-winit" feature — no extra renderer
+# features needed here. Pinned to the same 1.9.x range as `slint` (see above).
+i-slint-backend-winit = { version = ">=1.8, <1.10", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# ISO-8601 parsing for the success-screen "um HH:MM Uhr" line. The `clock`
+# feature pulls in the timezone machinery `DateTime::parse_from_rfc3339` needs;
+# default `oldtime`/`wasmbind` extras are dropped to keep the build lean.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+thiserror = "2"
+anyhow = "1"
+# Real NFC reader, gated behind the `real-reader` feature so the default build
+# pulls in no native PC/SC dependency.
+pcsc = { version = "2.9", optional = true }
+# SAM AV3 crypto primitives (AES-CMAC diversification/KDF, AES-CBC key-entry
+# encryption). Pure Rust, no system deps — compiled under default features so
+# the SAM APDU core is unit-testable with no hardware.
+aes = "0.9.1"
+cmac = "0.8.0"
+# CSPRNG for the SAM key-ceremony (company master key generation, Shamir
+# backup-share coefficients). Pure Rust — on Linux this is the getrandom(2)
+# syscall directly, no libsodium/OpenSSL dependency.
+getrandom = "0.2"
+# Best-effort in-memory zeroing of key material after the ceremony CLI writes
+# it to the SAM(s) and to the backup shares. Pure Rust, no system deps.
+zeroize = "1"
+# Hex encode/decode — used by SAM APDU known-answer tests AND (promoted from
+# dev-dependencies) by the key-ceremony CLI's hex key/share I/O.
+hex = "0.4.3"
+
+[build-dependencies]
+slint-build = ">=1.8, <1.10"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

@@ -1,0 +1,33 @@
+FROM python:3.13-slim AS base
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Install dependencies (cached layer)
+COPY pyproject.toml ./
+RUN uv sync --no-dev --no-install-project
+
+# Copy source
+COPY src/ ./src/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+# Betriebs-Skripte (Lohnarten-Seed, Dev-Account-Reset) — fuer `docker exec`
+# auf dem Server verfuegbar, laufen nie automatisch.
+COPY scripts/ ./scripts/
+
+# Install the project itself
+RUN uv sync --no-dev
+
+EXPOSE 8000
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Backend ist im Compose-Netz nur per `expose` erreichbar, kein Host-Port —
+# Caddy spricht das Backend ueber die interne Compose-IP (172.x) an, nicht
+# ueber localhost. --proxy-headers + --forwarded-allow-ips=* vertraut daher
+# bewusst X-Forwarded-For von jeder Peer-IP im (isolierten) Compose-Netz,
+# damit das Auth-Rate-Limit die echte Client-IP sieht statt der Caddy-IP.
+CMD ["uv", "run", "uvicorn", "zeiterfassung.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--factory", "--proxy-headers", "--forwarded-allow-ips=*"]

@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# Rust
+target/
+# Secrets & lokale Config
+**/.env
+# DB-Backups (liegen auf Platte, nicht in Git)
+
+# OS
+.DS_Store
+node_modules/
+.nuxt/
+.output/
+frontend/dist/
+*.log
+
+# Test-/Coverage-Artefakte
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+backups/
+pki/

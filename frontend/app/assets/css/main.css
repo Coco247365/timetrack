@@ -1,0 +1,155 @@
+/* Design-Tokens aus dem Design-Handoff (hi-fi). Petrol-Akzent, helle Flächen. */
+:root {
+  --accent: #1c6e63;
+  --accent-tint: color-mix(in srgb, var(--accent) 12%, #fff);
+  --accent-ring: color-mix(in srgb, var(--accent) 14%, #fff);
+
+  --bg: #f4f5f6;
+  --card: #fff;
+  --border: #e4e7e9;
+  --divider: #eef0f1;
+  --input-border: #d7dbde;
+
+  --text: #1f2933;
+  --text-2: #5b6770;
+  --text-3: #7a858c;
+  --label: #9aa3a9;
+
+  --green-text: #15784e; --green-dot: #1f8a5b; --green-bg: #e8f5ee;
+  --red-text: #c0392b; --red-dot: #d14343; --red-bg: #fdeceb;
+  --blue-text: #2f6f9e; --blue-bg: #eaf4fb;
+  --urlaub-bg: #e9f6ee; --urlaub-border: #bfe3cd;
+  --feiertag-bg: #fbf3e0; --feiertag-text: #b5651d;
+  --neutral-bg: #eef0f1; --neutral-dot: #9aa3a9;
+
+  --r-input: 9px; --r-card: 14px; --r-pill: 20px;
+  /* Einheitliche Höhe für Buttons + Formularfelder (native <select> rendern sonst
+     niedriger als Buttons und wirken „zu flach"). = natürliche .btn-Höhe. */
+  --control-h: 41px;
+  --shadow-card: 0 1px 2px rgba(20,30,40,.04);
+  --shadow-modal: 0 24px 60px -20px rgba(15,25,35,.4);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #__nuxt { margin: 0; min-height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+h1 { font-size: 22px; font-weight: 700; margin: 0; }
+h2 { font-size: 16px; font-weight: 650; margin: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-2); }
+.label {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .3px;
+  color: var(--label); font-weight: 600;
+}
+
+/* Layout — Inhaltsbreite passt sich dem Bildschirm an (bis max. 1680px) */
+.page { width: 100%; max-width: 1680px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 40px); }
+@media (max-width: 700px) {
+  .page { padding: 16px 12px; }
+  h1 { font-size: 19px; }
+}
+.row { display: flex; align-items: center; gap: 12px; }
+.spread { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stack { display: flex; flex-direction: column; gap: 4px; }
+
+/* Card */
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r-card); box-shadow: var(--shadow-card); padding: 18px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--control-h);
+  padding: 9px 16px; border: 1px solid var(--input-border); border-radius: var(--r-input);
+  background: #fff; color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { background: var(--divider); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+.btn-danger { background: var(--red-bg); border-color: #f0c8c6; color: var(--red-text); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-block { width: 100%; }
+
+/* Inputs */
+.input, select.input, textarea.input {
+  width: 100%; min-height: var(--control-h); padding: 9px 11px; border: 1px solid var(--input-border);
+  border-radius: var(--r-input); background: #fff; color: var(--text); font: inherit;
+}
+.input:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* Badges / Pills */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600;
+}
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+.badge.green { background: var(--green-bg); color: var(--green-text); }
+.badge.green .dot { background: var(--green-dot); }
+.badge.red { background: var(--red-bg); color: var(--red-text); }
+.badge.red .dot { background: var(--red-dot); }
+.badge.blue { background: var(--blue-bg); color: var(--blue-text); }
+.badge.blue .dot { background: var(--blue-text); }
+.badge.neutral { background: var(--neutral-bg); color: var(--text-2); }
+.badge.neutral .dot { background: var(--neutral-dot); }
+.badge.amber { background: var(--feiertag-bg); color: var(--feiertag-text); }
+.badge.amber .dot { background: var(--feiertag-text); }
+/* Laufende Pause: eigener gelber Zustand — "in Pause" ist weder anwesend
+   (gruen) noch weg (grau). Global, weil StatusBadge sie ueberall zeigt. */
+.badge.pause { background: #fdf3d3; color: #8a6100; }
+.badge.pause .dot { background: #e0a800; }
+
+/* Tabellen */
+table.data { width: 100%; border-collapse: collapse; }
+table.data th {
+  text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .3px;
+  color: var(--label); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--divider);
+}
+table.data td { padding: 11px 10px; border-bottom: 1px solid var(--divider); }
+table.data tr:last-child td { border-bottom: none; }
+table.data tbody tr.clickable { cursor: pointer; }
+table.data tbody tr.clickable:hover { background: var(--bg); }
+
+.pos { color: var(--green-text); }
+.neg { color: var(--red-text); }
+
+/* "Noch nicht funktional"-Markierung (Backend-Blocker) */
+.wip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+  background: #fff5e6; color: #9a6212; border: 1px dashed #e7c98f;
+}
+.wip-banner {
+  border: 1px dashed #e7c98f; background: #fffaf0; color: #8a5a12;
+  border-radius: var(--r-input); padding: 10px 12px; font-size: 13px;
+}
+
+.empty { color: var(--text-3); text-align: center; padding: 28px; }
+
+/* dezenter Text-/Link-Button (z. B. inline-Aktionen in Tabellen) */
+.linkbtn {
+  background: none; border: none; color: var(--accent); font: inherit;
+  font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 6px;
+}
+.linkbtn:hover { text-decoration: underline; }
+.linkbtn.danger { color: var(--red-text); }
+.linkbtn:disabled { opacity: .5; cursor: default; text-decoration: none; }
+
+/* Drucken: Kopfleiste (Navigation) nie mit ausgeben. */
+@media print {
+  .topbar { display: none !important; }
+}

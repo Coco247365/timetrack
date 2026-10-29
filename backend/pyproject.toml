@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zeiterfassung-backend"
+version = "0.1.0"
+description = "Zeiterfassung — multi-tenant FastAPI backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "pydantic-settings>=2.6.0",
+    "argon2-cffi>=23.1.0",
+    "pyjwt>=2.10.0",
+    "redis>=5.2.0",
+    "python-multipart>=0.0.18",
+    "python-dateutil>=2.9.0",
+    "hatchet-sdk>=1.29.3",
+    "sentry-sdk[fastapi]>=2.55.0",
+    "httpx>=0.28.1",
+    "reportlab>=4.2",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "anyio>=4.7.0",
+    "aiosqlite>=0.22.1",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zeiterfassung"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--cov=zeiterfassung --cov-report=term-missing -q"
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Demo seed data: long aligned-column comments, docstrings, and connection strings.
+"src/zeiterfassung/seed_demo.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+

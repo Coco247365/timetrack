@@ -1,0 +1,148 @@
+# Full-stack Zeiterfassung deployment (non-Pi server).
+#
+#   cp .env.example .env      # then edit secrets — at minimum POSTGRES_PASSWORD,
+#                             # ZEITERFASSUNG_JWT_SECRET, SITE_ADDRESS
+#   docker compose up -d --build
+#
+# Caddy terminates TLS (1og): automatic Let's Encrypt when SITE_ADDRESS is a real
+# domain, internal self-signed CA for localhost/LAN. It routes:
+#   /api/*, /health  -> backend:8000      (FastAPI)
+#   everything else  -> frontend:3000     (Nuxt SSR/PWA)
+#
+# The kiosk terminals are NOT part of this stack — they run on the Pi/wall and
+# talk to https://SITE_ADDRESS/api/v1/clock/nfc/* with their own device key.
+
+# Explicit project name so the stack never collides with others on a shared host.
+name: zeiterfassung
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zeiterfassung}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-zeiterfassung}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zeiterfassung} -d ${POSTGRES_DB:-zeiterfassung}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: apply Alembic migrations, then exit. backend waits for this to
+  # finish successfully so it never serves against an un-migrated schema.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.backend
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ZEITERFASSUNG_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zeiterfassung}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zeiterfassung}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ZEITERFASSUNG_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zeiterfassung}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zeiterfassung}
+      ZEITERFASSUNG_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    # The app-deploy hook health-gates the cutover on this. python (stdlib urllib)
+    # is present in the image; no curl needed.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: docker/Dockerfile.frontend
+      # SPA (ssr:false): the API base is baked in at BUILD time. "/" => the SPA
+      # calls the API same-origin under /api/v1 through Caddy (no CORS). A runtime
+      # `environment:` value would have no effect on the already-built static files.
+      args:
+        NUXT_PUBLIC_API_BASE: "/"
+    depends_on:
+      - backend
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  # Nightly logical backup of the app DB. Writes compressed pg_dumps to
+  # ./backups (daily/weekly/monthly, pruned). Tag :16 matches the postgres
+  # major so pg_dump is never older than the server. Restore with:
+  #   gunzip -c backups/last/zeiterfassung-latest.sql.gz | \
+  #     docker exec -i zeiterfassung-postgres-1 psql -U zeiterfassung -d zeiterfassung
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-zeiterfassung}
+      POSTGRES_USER: ${POSTGRES_USER:-zeiterfassung}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: "14"
+      BACKUP_KEEP_WEEKS: "6"
+      BACKUP_KEEP_MONTHS: "6"
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:

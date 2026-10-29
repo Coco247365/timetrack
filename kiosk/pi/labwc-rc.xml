@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  labwc config for the Zeiterfassung kiosk terminal.
+  Based on the Raspberry Pi OS default (/etc/xdg/labwc/rc.xml) with two changes:
+    1. A windowRule that puts the kiosk window ("Zeiterfassung Terminal") into
+       fullscreen + always-on-top with no taskbar/switcher entry, so it covers
+       the panel/desktop and the user only ever sees the terminal.
+    2. The window-closing key bindings (Alt+F4, Alt+Space client menu) are
+       disabled so an attached keyboard cannot close the kiosk.
+  Together with the respawn loop in run-kiosk.sh and the lack of any on-screen
+  close affordance (fullscreen, no titlebar), the user cannot close the window.
+  Deploy to ~/.config/labwc/rc.xml and reload labwc (SIGHUP).
+-->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+
+  <theme>
+    <name>PiXtrix</name>
+    <cornerRadius>0</cornerRadius>
+    <keepBorder>yes</keepBorder>
+    <font place="ActiveWindow">
+      <name>Nunito Sans</name>
+      <size>12</size>
+      <weight>Light</weight>
+      <slant>Normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>Nunito Sans</name>
+      <size>12</size>
+      <weight>Light</weight>
+      <slant>Normal</slant>
+    </font>
+    <font place="OnScreenDisplay">
+      <name>Nunito Sans</name>
+      <size>12</size>
+      <weight>Light</weight>
+      <slant>Normal</slant>
+    </font>
+    <dropShadows>yes</dropShadows>
+    <titlebar>
+      <layout>:iconify,max,close</layout>
+    </titlebar>
+  </theme>
+
+  <keyboard>
+    <numlock>off</numlock>
+    <default />
+    <!-- Kiosk lockdown: disable window-closing shortcuts. -->
+    <keybind key="A-F4" />
+    <keybind key="A-Space" />
+    <keybind key="A-Left" />
+    <keybind key="A-Right" />
+    <keybind key="A-Up" />
+    <keybind key="A-Down" />
+    <keybind key="C-A-Left">
+      <action name="SnapToEdge" direction="left"></action>
+    </keybind>
+    <keybind key="C-A-Right">
+      <action name="SnapToEdge" direction="right"></action>
+    </keybind>
+    <keybind key="C-A-Up">
+      <action name="Maximize"></action>
+    </keybind>
+    <keybind key="C-A-Down">
+      <action name="UnMaximize"></action>
+    </keybind>
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute">
+        <command>wfpanelctl volumepulse volu</command>
+      </action>
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute">
+        <command>wfpanelctl volumepulse vold</command>
+      </action>
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute">
+        <command>wfpanelctl volumepulse mute</command>
+      </action>
+    </keybind>
+    <keybind key="C-A-Delete">
+      <action name="Execute">
+         <command>pishutdown</command>
+      </action>
+    </keybind>
+    <keybind key="XF86PowerOff" onRelease="yes">
+      <action name="Execute">
+        <command>pwrkey</command>
+      </action>
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute">
+        <command>grim</command>
+      </action>
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <default />
+    <context name="All">
+      <mousebind direction="W-Up" action="Scroll">
+        <action name="ZoomIn" />
+      </mousebind>
+      <mousebind direction="W-Down" action="Scroll">
+        <action name="ZoomOut" />
+      </mousebind>
+     </context>
+  </mouse>
+
+  <windowRules>
+    <windowRule identifier="Kodi" serverDecoration="yes" />
+    <!-- The kiosk: fullscreen, always on top, no taskbar/switcher entry. -->
+    <windowRule title="Zeiterfassung Terminal*" matchOnce="true">
+      <skipTaskbar>yes</skipTaskbar>
+      <skipWindowSwitcher>yes</skipWindowSwitcher>
+      <action name="ToggleFullscreen" />
+      <action name="ToggleAlwaysOnTop" />
+    </windowRule>
+  </windowRules>
+
+  <snapping>
+    <range>0</range>
+    <topMaximize>no</topMaximize>
+  </snapping>
+
+  <windowSwitcher show="no" preview="no" outlines="no" allWorkspaces="no">
+    <fields>
+      <field content="icon" width="5%" />
+      <field content="title" width="95%" />
+    </fields>
+  </windowSwitcher>
+
+  <touch deviceName="10-0038 generic ft5x06 (79)" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="11-0038 generic ft5x06 (79)" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="6-0038 generic ft5x06 (79)" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="4-0038 generic ft5x06 (79)" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="10-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="11-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-2" mouseEmulation="yes" />
+
+</openbox_config>

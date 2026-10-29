@@ -1,0 +1,26 @@
+# Statische Nuxt-SPA (ssr:false): bauen, dann von nginx ausliefern.
+#
+# Stage 1 — Build: erzeugt statische Dateien nach .output/public
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Deps zuerst (Layer-Cache). Projekt nutzt pnpm (packageManager in package.json),
+# via corepack — wie die CI (.github/workflows/ci.yml).
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+# SPA: NUXT_PUBLIC_API_BASE wird beim BUILD eingebacken (zur Laufzeit wirkungslos).
+# "/" => das Frontend ruft die API relativ unter /api/v1 auf → same-origin via Caddy,
+# kein CORS. Override per --build-arg / compose `args:` möglich.
+ARG NUXT_PUBLIC_API_BASE=/
+ENV NUXT_PUBLIC_API_BASE=$NUXT_PUBLIC_API_BASE
+RUN pnpm run generate
+
+# Stage 2 — Serve: nginx liefert die statischen Dateien auf :3000 aus
+FROM nginx:alpine
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/.output/public /usr/share/nginx/html
+EXPOSE 3000
